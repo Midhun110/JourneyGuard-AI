@@ -15,6 +15,13 @@ class WeatherService {
     'relative_humidity_2m',
   ];
 
+  // In-memory cache for hourly forecasts keyed by "lat_lng_date"
+  final Map<String, Map<String, dynamic>> _hourlyForecastCache = {};
+
+  String _cacheKey(double lat, double lng, String date) {
+    return '${lat.toStringAsFixed(2)}_${lng.toStringAsFixed(2)}_$date';
+  }
+
   /// Module B - 3.1: Get weather forecast per segment matching prompt signature.
   /// Calls Open-Meteo for the segment's midpoint and ETA.
   /// Also includes 3.2 cumulative rainfall across preceding hours.
@@ -24,20 +31,32 @@ class WeatherService {
     DateTime eta,
   ) async {
     final date = DateFormat('yyyy-MM-dd').format(eta);
-    // Request past_days=1 to capture antecedent rainfall for ground saturation (3.2)
-    final url = Uri.parse(
-      '${AppConstants.openMeteoBaseUrl}?latitude=$lat&longitude=$lng'
-      '&hourly=precipitation,precipitation_probability,temperature_2m,wind_speed_10m,weather_code'
-      '&start_date=${DateFormat('yyyy-MM-dd').format(eta.subtract(const Duration(days: 1)))}'
-      '&end_date=$date'
-      '&timezone=auto',
-    );
+    final key = _cacheKey(lat, lng, date);
 
     try {
-      final res = await http.get(url).timeout(const Duration(seconds: 10));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final hourly = data['hourly'] as Map<String, dynamic>;
+      Map<String, dynamic>? hourly;
+      if (_hourlyForecastCache.containsKey(key)) {
+        hourly = _hourlyForecastCache[key];
+      } else {
+        // Request past_days=1 to capture antecedent rainfall for ground saturation (3.2)
+        final url = Uri.parse(
+          '${AppConstants.openMeteoBaseUrl}?latitude=$lat&longitude=$lng'
+          '&hourly=precipitation,precipitation_probability,temperature_2m,wind_speed_10m,weather_code'
+          '&start_date=${DateFormat('yyyy-MM-dd').format(eta.subtract(const Duration(days: 1)))}'
+          '&end_date=$date'
+          '&timezone=auto',
+        );
+        final res = await http.get(url).timeout(const Duration(seconds: 10));
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          hourly = data['hourly'] as Map<String, dynamic>?;
+          if (hourly != null) {
+            _hourlyForecastCache[key] = hourly;
+          }
+        }
+      }
+
+      if (hourly != null) {
         final times = (hourly['time'] as List?)?.cast<String>() ?? [];
         final targetHour = 'T${eta.hour.toString().padLeft(2, '0')}:00';
         
@@ -93,29 +112,38 @@ class WeatherService {
     required LatLng location,
     required DateTime dateTime,
   }) async {
-    final prevDate = _formatDate(dateTime.subtract(const Duration(days: 1)));
     final curDate = _formatDate(dateTime);
-
-    final url = '${AppConstants.openMeteoBaseUrl}'
-        '?latitude=${location.latitude}'
-        '&longitude=${location.longitude}'
-        '&hourly=${_weatherVariables.join(',')}'
-        '&start_date=$prevDate'
-        '&end_date=$curDate'
-        '&timezone=auto'
-        '&wind_speed_unit=kmh';
+    final key = _cacheKey(location.latitude, location.longitude, curDate);
 
     try {
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 10));
+      Map<String, dynamic>? hourly;
+      if (_hourlyForecastCache.containsKey(key)) {
+        hourly = _hourlyForecastCache[key];
+      } else {
+        final prevDate = _formatDate(dateTime.subtract(const Duration(days: 1)));
+        final url = '${AppConstants.openMeteoBaseUrl}'
+            '?latitude=${location.latitude}'
+            '&longitude=${location.longitude}'
+            '&hourly=${_weatherVariables.join(',')}'
+            '&start_date=$prevDate'
+            '&end_date=$curDate'
+            '&timezone=auto'
+            '&wind_speed_unit=kmh';
 
-      if (response.statusCode != 200) {
-        return WeatherData.empty();
+        final response = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 10));
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          hourly = data['hourly'] as Map<String, dynamic>?;
+          if (hourly != null) {
+            _hourlyForecastCache[key] = hourly;
+          }
+        }
       }
 
-      final data = json.decode(response.body) as Map<String, dynamic>;
-      final hourly = data['hourly'] as Map<String, dynamic>;
+      if (hourly == null) return WeatherData.empty();
 
       // Find target hour on the current date
       final times = (hourly['time'] as List?)?.cast<String>() ?? [];

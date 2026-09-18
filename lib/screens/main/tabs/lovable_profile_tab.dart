@@ -2,7 +2,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../models/incident_report.dart';
+import '../../../services/incident_service.dart';
 import '../../../services/location_service.dart';
+import '../../../services/supabase_service.dart';
+import '../../../widgets/auth_dialog.dart';
 import '../../settings/settings_screen.dart';
 
 class LovableProfileTab extends StatefulWidget {
@@ -18,6 +22,8 @@ class _LovableProfileTabState extends State<LovableProfileTab> {
   final _descriptionController = TextEditingController();
 
   String? _imagePath;
+  double? _latitude;
+  double? _longitude;
   String _locationName = 'Infopark Expressway, Kakkanad';
   String _coordinates = '10.0159° N, 76.3419° E';
   bool _isGettingLocation = false;
@@ -47,6 +53,8 @@ class _LovableProfileTabState extends State<LovableProfileTab> {
       final pos = await _locationService.getCurrentLocation();
       if (pos != null && mounted) {
         setState(() {
+          _latitude = pos.latitude;
+          _longitude = pos.longitude;
           _locationName = 'Current GPS Position';
           _coordinates =
               '${pos.latitude.toStringAsFixed(4)}° N, ${pos.longitude.toStringAsFixed(4)}° E';
@@ -76,29 +84,67 @@ class _LovableProfileTabState extends State<LovableProfileTab> {
 
   Future<void> _submitReport() async {
     setState(() => _isSubmitting = true);
-    await Future.delayed(const Duration(milliseconds: 1200));
 
-    if (mounted) {
-      setState(() {
-        _isSubmitting = false;
-        _imagePath = null;
-        _descriptionController.clear();
-      });
+    try {
+      // Auto-authenticate as anonymous guest if not signed in (minimal effort demo)
+      if (!SupabaseService.instance.isAuthenticated) {
+        await SupabaseService.instance.signInAnonymously();
+      }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.white, size: 20),
-              SizedBox(width: 10),
-              Text('Hazard reported! Verified by JourneyGuard AI.'),
-            ],
-          ),
-          backgroundColor: AppColors.lovableGreen,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+      String? photoUrl;
+      if (_imagePath != null) {
+        photoUrl = await SupabaseService.instance.uploadIncidentPhoto(File(_imagePath!));
+      }
+
+      final report = IncidentReport(
+        incidentType: _selectedIncidentType,
+        description: _descriptionController.text.trim().isEmpty
+            ? 'Hazard reported via Safety Hub'
+            : _descriptionController.text.trim(),
+        latitude: _latitude ?? 10.0159,
+        longitude: _longitude ?? 76.3419,
+        imagePath: _imagePath,
+        photoUrl: photoUrl,
+        locationName: _locationName,
+        reportedAt: DateTime.now(),
       );
+
+      await IncidentService.instance.submitReport(report);
+
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+          _imagePath = null;
+          _descriptionController.clear();
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text('Hazard broadcast to Supabase PostGIS & Route Risk Engine!'),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.lovableGreen,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Report saved locally: $e'),
+            backgroundColor: AppColors.riskModerate,
+          ),
+        );
+      }
     }
   }
 
@@ -204,7 +250,52 @@ class _LovableProfileTabState extends State<LovableProfileTab> {
     );
   }
 
+  Future<void> _confirmSignOut(BuildContext context) async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.logout_rounded, color: AppColors.riskCritical, size: 22),
+            SizedBox(width: 10),
+            Text('Log Out'),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to end your active JourneyGuard session? You will be returned to the login screen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.riskCritical,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Log Out', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await SupabaseService.instance.signOut();
+    }
+  }
+
   Widget _buildProfileCard() {
+    final userEmail = SupabaseService.instance.userEmail;
+    final isAnon = SupabaseService.instance.isAnonymous;
+    final isAuthed = SupabaseService.instance.isAuthenticated;
+
+    final displayName = isAuthed
+        ? (isAnon ? 'Guest Commuter (Demo)' : (userEmail?.split('@').first ?? 'Commuter'))
+        : 'Midhun';
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -213,87 +304,179 @@ class _LovableProfileTabState extends State<LovableProfileTab> {
         border: Border.all(color: AppColors.borderFor(context)),
         boxShadow: AppColors.cardShadowFor(context),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar
-          Container(
-            width: 58,
-            height: 58,
-            decoration: const BoxDecoration(
-              gradient: AppColors.lovableGradient,
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Text(
-                'M',
+          Row(
+            children: [
+              // Avatar
+              Container(
+                width: 58,
+                height: 58,
+                decoration: const BoxDecoration(
+                  gradient: AppColors.lovableGradient,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    displayName.isNotEmpty ? displayName[0].toUpperCase() : 'M',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // User Details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.textPrimaryFor(context),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (isAuthed ? AppColors.lovableGreen : AppColors.accentIndigo)
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isAuthed ? (isAnon ? 'Guest Demo' : 'Verified') : 'Demo',
+                            style: TextStyle(
+                              color: isAuthed ? AppColors.lovableGreen : AppColors.accentIndigo,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // Logged in User's Email
+                    if (userEmail != null) ...[
+                      Row(
+                        children: [
+                          const Icon(Icons.email_outlined, size: 13, color: AppColors.lovableTeal),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              userEmail,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppColors.lovableTeal,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      isAuthed
+                          ? (isAnon ? 'Anonymous Guest Session (SIH Demo)' : 'Authenticated Supabase User')
+                          : 'Sedan · Kerala Highway Commuter',
+                      style: TextStyle(
+                        color: AppColors.textSecondaryFor(context),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Safety Rating Bar
+          const Row(
+            children: [
+              Icon(Icons.shield, size: 14, color: AppColors.lovableGreen),
+              SizedBox(width: 5),
+              Text(
+                'Safety Rating: 98/100 (Safe Traveler)',
                 style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w800,
+                  color: AppColors.lovableGreen,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Logout or Switch Account Buttons
+          if (isAuthed) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _confirmSignOut(context),
+                icon: const Icon(Icons.logout_rounded, size: 16, color: AppColors.riskCritical),
+                label: const Text(
+                  'Log Out',
+                  style: TextStyle(
+                    color: AppColors.riskCritical,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.riskCritical.withValues(alpha: 0.4)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 16),
-          // User Details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          ] else ...[
+            InkWell(
+              onTap: () async {
+                await showDialog(
+                  context: context,
+                  builder: (_) => const AuthDialog(),
+                );
+                if (mounted) setState(() {});
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceFor(context),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.borderFor(context)),
+                ),
+                child: const Row(
                   children: [
-                    Text(
-                      'Midhun',
-                      style: TextStyle(
-                        color: AppColors.textPrimaryFor(context),
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.lovableGreen.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Verified',
+                    Icon(Icons.lock_outline_rounded, size: 16, color: AppColors.lovableTeal),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Sign In / 1-Tap Guest Access (Demo)',
                         style: TextStyle(
-                          color: AppColors.lovableGreen,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
+                    Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF94A3B8)),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Sedan · Kerala Highway Commuter',
-                  style: TextStyle(
-                    color: AppColors.textSecondaryFor(context),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Row(
-                  children: [
-                    Icon(Icons.shield, size: 14, color: AppColors.lovableGreen),
-                    SizedBox(width: 5),
-                    Text(
-                      'Safety Rating: 98/100 (Safe Traveler)',
-                      style: TextStyle(
-                        color: AppColors.lovableGreen,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

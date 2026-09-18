@@ -11,16 +11,28 @@ class AppConstants {
   // Nominatim Geocoding
   static const String nominatimBaseUrl = 'https://nominatim.openstreetmap.org';
 
-  // Risk Formula Weights
+  // Module B Risk Formula Weights
   static const double weightRainfallIntensity = 0.40;
   static const double weightRainProbability = 0.15;
   static const double weightCumulativeRainfall = 0.20;
   static const double weightRoadVulnerability = 0.15;
   static const double weightHistoricalIncidents = 0.10;
 
+  // Module C Route Comparison Ranking Weights
+  static const double defaultRiskWeight = 0.70; // Safety-first default
+  static const double defaultTimeWeight = 0.30;
+
   // Departure Time Options (24h)
-  static const List<int> departureHours = [6, 8, 10, 12, 14];
-  static const List<String> departureLabels = ['6 AM', '8 AM', '10 AM', '12 PM', '2 PM'];
+  static const List<int> departureHours = [6, 8, 10, 12, 14, 16, 18];
+  static const List<String> departureLabels = [
+    '6 AM',
+    '8 AM',
+    '10 AM',
+    '12 PM',
+    '2 PM',
+    '4 PM',
+    '6 PM'
+  ];
 
   // Route Segment Distance (meters)
   static const double segmentLengthMeters = 5000; // 5km segments
@@ -29,4 +41,5 @@ class AppConstants {
   static const double lowRiskThreshold = 25.0;
   static const double moderateRiskThreshold = 50.0;
   static const double highRiskThreshold = 75.0;
+  static const double acceptableRiskThreshold = 50.0; // Routes <= 50 are acceptable for travel
 }

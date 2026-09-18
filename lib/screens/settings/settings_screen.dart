@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../services/theme_provider.dart';
+import '../../services/supabase_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   final bool checkLocationPermission;
@@ -194,6 +195,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSectionHeader('SUPPORT & COMMUNITY'),
             const SizedBox(height: 10),
             _buildSupportCard(
+              cardColor: cardColor,
+              borderColor: borderColor,
+              textPrimary: textPrimary,
+              textSecondary: textSecondary,
+              shadows: shadows,
+            ),
+            const SizedBox(height: 24),
+
+            // 6. ACCOUNT & AUTHENTICATION
+            _buildSectionHeader('ACCOUNT & AUTHENTICATION'),
+            const SizedBox(height: 10),
+            _buildAccountCard(
               cardColor: cardColor,
               borderColor: borderColor,
               textPrimary: textPrimary,
@@ -1101,6 +1114,159 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildAccountCard({
+    required Color cardColor,
+    required Color borderColor,
+    required Color textPrimary,
+    required Color textSecondary,
+    required List<BoxShadow> shadows,
+  }) {
+    final userEmail = SupabaseService.instance.userEmail;
+    final isAuthed = SupabaseService.instance.isAuthenticated;
+    final isAnon = SupabaseService.instance.isAnonymous;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor),
+        boxShadow: shadows,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: (isAuthed ? AppColors.lovableTeal : AppColors.accentIndigo)
+                      .withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isAuthed ? Icons.verified_user_rounded : Icons.person_outline_rounded,
+                  color: isAuthed ? AppColors.lovableTeal : AppColors.accentIndigo,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            isAuthed
+                                ? (isAnon ? 'Guest Commuter' : 'Verified Commuter')
+                                : 'Not Signed In',
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.headlineSmall.copyWith(color: textPrimary),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: (isAuthed ? AppColors.lovableGreen : AppColors.riskModerate)
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isAuthed ? (isAnon ? 'Demo Guest' : 'Active') : 'Inactive',
+                            style: TextStyle(
+                              color: isAuthed ? AppColors.lovableGreen : AppColors.riskModerate,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      userEmail ?? 'No active Supabase session detected',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: isAuthed ? AppColors.lovableTeal : textSecondary,
+                        fontWeight: isAuthed ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (isAuthed) ...[
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      title: const Row(
+                        children: [
+                          Icon(Icons.logout_rounded, color: AppColors.riskCritical, size: 22),
+                          SizedBox(width: 10),
+                          Text('Log Out'),
+                        ],
+                      ),
+                      content: const Text(
+                        'Do you want to log out of JourneyGuard? You will be redirected to the sign-in screen.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.riskCritical,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Log Out', style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirm == true) {
+                    await SupabaseService.instance.signOut();
+                    if (mounted) {
+                      Navigator.of(context).popUntil((route) => route.isFirst);
+                    }
+                  }
+                },
+                icon: const Icon(Icons.logout_rounded, size: 16, color: AppColors.riskCritical),
+                label: const Text(
+                  'Log Out of Session',
+                  style: TextStyle(
+                    color: AppColors.riskCritical,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: AppColors.riskCritical.withValues(alpha: 0.4)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

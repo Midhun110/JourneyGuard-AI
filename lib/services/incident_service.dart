@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:latlong2/latlong.dart';
 import '../models/incident_report.dart';
+import 'supabase_service.dart';
 
 class IncidentQueryMatch {
   final double score; // 0-100
@@ -36,9 +37,55 @@ class IncidentService {
 
   List<IncidentReport> get allReports => List.unmodifiable(_reports);
 
-  /// Add a newly crowdsourced incident report (Module D)
+  /// Synchronous local addition for testing and immediate risk engine feedback
   void addReport(IncidentReport report) {
     _reports.insert(0, report);
+  }
+
+  /// Module D: Submit report, upload to Supabase PostGIS, and cache locally
+  Future<IncidentReport> submitReport(IncidentReport report) async {
+    // 1. Add to local store immediately for instant Module B risk calculation
+    _reports.insert(0, report);
+
+    // 2. Persist to Supabase PostgreSQL + PostGIS
+    try {
+      final persisted = await SupabaseService.instance.insertIncident(report);
+      if (persisted != null && persisted.id != null) {
+        final idx = _reports.indexOf(report);
+        if (idx >= 0) {
+          _reports[idx] = persisted;
+          return persisted;
+        }
+      }
+    } catch (_) {}
+
+    return report;
+  }
+
+  /// Fetch and merge latest crowdsourced reports from Supabase PostGIS
+  Future<void> syncFromSupabase({double? lat, double? lng, double radiusMeters = 50000.0}) async {
+    try {
+      List<IncidentReport> remote;
+      if (lat != null && lng != null) {
+        remote = await SupabaseService.instance.fetchNearbyIncidents(
+          lat: lat,
+          lng: lng,
+          radiusMeters: radiusMeters,
+        );
+      } else {
+        remote = await SupabaseService.instance.fetchNearbyIncidents(
+          lat: 10.0,
+          lng: 76.5,
+          radiusMeters: 200000.0,
+        );
+      }
+
+      for (final inc in remote) {
+        if (inc.id != null && !_reports.any((r) => r.id == inc.id)) {
+          _reports.add(inc);
+        }
+      }
+    } catch (_) {}
   }
 
   /// Query incidents within [radiusKm] of segment midpoint and compute recency-weighted score (0-100)

@@ -1,4 +1,5 @@
 import 'package:latlong2/latlong.dart';
+import 'risk_segment.dart';
 
 class RouteModel {
   final List<LatLng> coordinates;
@@ -50,16 +51,119 @@ class RouteModel {
   }
 }
 
+/// Module C: Comprehensive Route Comparison Model
+///
+/// Balances route-level risk (distance-weighted or conservative peak)
+/// with normalized journey duration according to user safety weights.
 class RouteComparison {
   final RouteModel route;
-  final double riskScore;
-  final double rainProbability;
-  final String label; // 'Safest', 'Fastest', 'Balanced'
+  final double riskScore; // Active route-level risk score (0-100)
+  final double rainProbability; // 0-100 %
+  final String label; // 'Safest', 'Fastest Acceptable', 'Balanced', etc.
+
+  // Module C Extended Metrics
+  final List<RiskSegment> segments;
+  final double weightedAvgRisk;
+  final double maxRisk;
+  final double normalizedDuration; // 0-100 penalty relative to fastest route
+  final double combinedScore; // (risk_weight * norm_risk) + (time_weight * norm_duration)
+  final int rank; // 1-based rank
+  final bool isSafest;
+  final bool isFastestAcceptable;
+  final bool isRecommended;
+  final String recommendationTag;
 
   const RouteComparison({
     required this.route,
     required this.riskScore,
     required this.rainProbability,
     required this.label,
+    this.segments = const [],
+    this.weightedAvgRisk = 0.0,
+    this.maxRisk = 0.0,
+    this.normalizedDuration = 0.0,
+    this.combinedScore = 0.0,
+    this.rank = 1,
+    this.isSafest = false,
+    this.isFastestAcceptable = false,
+    this.isRecommended = false,
+    this.recommendationTag = '',
   });
+
+  String get riskClassification => RiskSegment.classifyRiskLevel(riskScore);
+  String get peakRiskClassification => RiskSegment.classifyRiskLevel(maxRisk);
+
+  RouteComparison copyWith({
+    RouteModel? route,
+    double? riskScore,
+    double? rainProbability,
+    String? label,
+    List<RiskSegment>? segments,
+    double? weightedAvgRisk,
+    double? maxRisk,
+    double? normalizedDuration,
+    double? combinedScore,
+    int? rank,
+    bool? isSafest,
+    bool? isFastestAcceptable,
+    bool? isRecommended,
+    String? recommendationTag,
+  }) {
+    return RouteComparison(
+      route: route ?? this.route,
+      riskScore: riskScore ?? this.riskScore,
+      rainProbability: rainProbability ?? this.rainProbability,
+      label: label ?? this.label,
+      segments: segments ?? this.segments,
+      weightedAvgRisk: weightedAvgRisk ?? this.weightedAvgRisk,
+      maxRisk: maxRisk ?? this.maxRisk,
+      normalizedDuration: normalizedDuration ?? this.normalizedDuration,
+      combinedScore: combinedScore ?? this.combinedScore,
+      rank: rank ?? this.rank,
+      isSafest: isSafest ?? this.isSafest,
+      isFastestAcceptable: isFastestAcceptable ?? this.isFastestAcceptable,
+      isRecommended: isRecommended ?? this.isRecommended,
+      recommendationTag: recommendationTag ?? this.recommendationTag,
+    );
+  }
+}
+
+/// Container for multi-route evaluation results and active recommendations
+class RouteComparisonResult {
+  final List<RouteComparison> comparisons;
+  final double riskWeight;
+  final double timeWeight;
+  final bool useConservativeMax;
+  final bool isPostponementAdvised;
+  final String? postponementReason;
+
+  const RouteComparisonResult({
+    required this.comparisons,
+    required this.riskWeight,
+    required this.timeWeight,
+    required this.useConservativeMax,
+    required this.isPostponementAdvised,
+    this.postponementReason,
+  });
+
+  RouteComparison? get safestRoute {
+    if (comparisons.isEmpty) return null;
+    return comparisons.firstWhere(
+      (c) => c.isSafest,
+      orElse: () => comparisons.reduce((a, b) => a.riskScore < b.riskScore ? a : b),
+    );
+  }
+
+  RouteComparison? get fastestAcceptableRoute {
+    final matches = comparisons.where((c) => c.isFastestAcceptable);
+    return matches.isNotEmpty ? matches.first : null;
+  }
+
+  RouteComparison? get recommendedRoute {
+    if (comparisons.isEmpty) return null;
+    return comparisons.firstWhere(
+      (c) => c.isRecommended,
+      orElse: () => comparisons.first,
+    );
+  }
 }

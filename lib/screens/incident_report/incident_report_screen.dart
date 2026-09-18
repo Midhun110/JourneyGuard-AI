@@ -7,8 +7,10 @@ import '../../core/theme/app_typography.dart';
 import '../../models/incident_report.dart';
 import '../../services/location_service.dart';
 import '../../services/incident_service.dart';
+import '../../services/supabase_service.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/glass_card.dart';
+import '../../widgets/auth_dialog.dart';
 
 class IncidentReportScreen extends StatefulWidget {
   const IncidentReportScreen({super.key});
@@ -122,35 +124,58 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
       return;
     }
 
+    if (_latitude == null || _longitude == null) {
+      _showError('GPS location is required to map this incident accurately.');
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
-    // Create report object
-    final report = IncidentReport(
-      imagePath: _imagePath,
-      latitude: _latitude,
-      longitude: _longitude,
-      incidentType: _selectedType,
-      description: _descriptionController.text.trim(),
-      reportedAt: DateTime.now(),
-      locationName: _locationName,
-    );
+    try {
+      // Module E: Ensure user is authenticated (auto guest sign-in for seamless reporting)
+      if (!SupabaseService.instance.isAuthenticated) {
+        await SupabaseService.instance.signInAnonymously();
+      }
 
-    // Register with Module B & D incident service
-    IncidentService.instance.addReport(report);
+      // Module D: Upload photo to Supabase Storage
+      String? photoUrl;
+      if (_imagePath != null) {
+        final photoFile = File(_imagePath!);
+        if (await photoFile.exists()) {
+          photoUrl =
+              await SupabaseService.instance.uploadIncidentPhoto(photoFile);
+        }
+      }
 
-    // TODO: Submit to Supabase
-    // await supabase.from('incidents').insert(report.toJson());
-    debugPrint('Incident report added to IncidentService: ${report.toJson()}');
+      // Create report object with PostGIS coordinates and reporter_id
+      final report = IncidentReport(
+        imagePath: _imagePath,
+        photoUrl: photoUrl,
+        latitude: _latitude,
+        longitude: _longitude,
+        incidentType: _selectedType,
+        description: _descriptionController.text.trim(),
+        reportedAt: DateTime.now(),
+        locationName: _locationName,
+        reporterId: SupabaseService.instance.currentUserId,
+      );
 
-    await Future.delayed(const Duration(seconds: 1)); // Simulate API call
+      // Register with Module B & D incident service (PostgreSQL + PostGIS insert)
+      final submitted = await IncidentService.instance.submitReport(report);
 
-    if (mounted) {
-      setState(() => _isSubmitting = false);
-      _showSuccessDialog();
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        _showSuccessDialog(submitted);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        _showError('Failed to submit report: $e');
+      }
     }
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog(IncidentReport report) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -160,21 +185,79 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: AppColors.riskLow.withOpacity(0.15),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.check_circle_rounded,
-                  color: AppColors.riskLow, size: 48),
+                  color: AppColors.riskLow, size: 44),
             ),
-            const SizedBox(height: 16),
-            Text('Report Submitted!', style: AppTypography.headlineMedium),
+            const SizedBox(height: 14),
+            Text('Hazard Broadcasted!', style: AppTypography.headlineMedium),
             const SizedBox(height: 8),
             Text(
-              'Thank you for helping keep other travelers safe.',
-              style: AppTypography.bodyMedium,
+              'Your report is now live in the PostgreSQL + PostGIS database '
+              'and actively updates route risk scores for all nearby commuters.',
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Hazard Type', style: AppTypography.labelSmall),
+                      Text(
+                        report.incidentType,
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.riskCritical,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('GPS Coordinates',
+                          style: AppTypography.labelSmall),
+                      Text(
+                        '${report.latitude?.toStringAsFixed(4)}, ${report.longitude?.toStringAsFixed(4)}',
+                        style: AppTypography.labelSmall
+                            .copyWith(color: AppColors.textPrimary),
+                      ),
+                    ],
+                  ),
+                  if (report.photoUrl != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Supabase Storage',
+                            style: AppTypography.labelSmall),
+                        Text(
+                          'Photo Uploaded ✓',
+                          style: AppTypography.labelSmall
+                              .copyWith(color: AppColors.accentCyan),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 20),
             GradientButton(
@@ -201,6 +284,56 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
     );
   }
 
+  Widget _buildReporterAuthCard() {
+    final user = SupabaseService.instance.currentUser;
+    final isAuthed = SupabaseService.instance.isAuthenticated;
+    final isAnon = SupabaseService.instance.isAnonymous;
+
+    return GestureDetector(
+      onTap: () async {
+        await AuthDialog.show(context);
+        if (mounted) setState(() {});
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isAuthed ? Icons.verified_user_rounded : Icons.person_outline_rounded,
+              size: 16,
+              color: isAuthed ? AppColors.accentCyan : AppColors.textMuted,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                isAuthed
+                    ? (isAnon ? 'Reporting as Guest Commuter' : 'Reporting as ${user?.email}')
+                    : 'Tap to sign in or report as guest',
+                style: AppTypography.bodySmall.copyWith(
+                  color: isAuthed ? AppColors.textPrimary : AppColors.textMuted,
+                  fontSize: 12,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              isAuthed ? 'Change' : 'Auth',
+              style: AppTypography.labelSmall.copyWith(
+                color: AppColors.accentIndigo,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -212,12 +345,26 @@ class _IncidentReportScreenState extends State<IncidentReportScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Authentication',
+            icon: const Icon(Icons.account_circle_outlined, color: AppColors.accentCyan),
+            onPressed: () async {
+              await AuthDialog.show(context);
+              if (mounted) setState(() {});
+            },
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Reporter auth card (Module E)
+            _buildReporterAuthCard().animate().fadeIn(duration: 300.ms),
+            const SizedBox(height: 16),
+
             // Image section
             _buildImageSection().animate().fadeIn(duration: 400.ms),
             const SizedBox(height: 20),

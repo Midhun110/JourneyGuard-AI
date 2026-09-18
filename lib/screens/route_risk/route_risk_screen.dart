@@ -45,10 +45,14 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
   String? _errorMsg;
   int _selectedSegmentIndex = -1;
   late AnimationController _bottomSheetController;
+  late RouteModel _activeRoute;
+  late DateTime _activeDepartureTime;
 
   @override
   void initState() {
     super.initState();
+    _activeRoute = widget.routes.first;
+    _activeDepartureTime = widget.departureTime;
     _bottomSheetController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -64,10 +68,9 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
 
   Future<void> _loadRiskData() async {
     try {
-      final primaryRoute = widget.routes.first;
       final segments = await _riskEngine.buildRiskSegments(
-        route: primaryRoute,
-        departureTime: widget.departureTime,
+        route: _activeRoute,
+        departureTime: _activeDepartureTime,
       );
 
       if (mounted) {
@@ -89,8 +92,7 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
 
   double get _overallRisk {
     if (_segments.isEmpty) return 0;
-    return _segments.map((s) => s.riskScore).reduce((a, b) => a + b) /
-        _segments.length;
+    return _riskEngine.calculateRouteRisk(_segments, conservative: false);
   }
 
   double get _totalRainfall {
@@ -102,7 +104,7 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
 
   @override
   Widget build(BuildContext context) {
-    final route = widget.routes.first;
+    final route = _activeRoute;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -262,7 +264,7 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
         allPoints.addAll(seg.points);
       }
     } else {
-      allPoints.addAll(widget.routes.first.coordinates);
+      allPoints.addAll(_activeRoute.coordinates);
     }
 
     double minLat = allPoints.first.latitude;
@@ -332,7 +334,7 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
         const SizedBox(width: 8),
         _InfoChip(
           icon: Icons.calendar_today_rounded,
-          label: DateFormat('h:mm a').format(widget.departureTime),
+          label: DateFormat('h:mm a').format(_activeDepartureTime),
         ),
       ],
     ).animate().fadeIn(delay: 200.ms, duration: 400.ms);
@@ -463,13 +465,14 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
                         child: _OutlineButton(
                           label: 'Compare Routes',
                           icon: Icons.compare_arrows_rounded,
-                          onTap: () {
-                            Navigator.push(
+                          onTap: () async {
+                            final selectedRoute =
+                                await Navigator.push<RouteModel>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => RouteComparisonScreen(
                                   routes: widget.routes,
-                                  departureTime: widget.departureTime,
+                                  departureTime: _activeDepartureTime,
                                   fromName: widget.fromName,
                                   toName: widget.toName,
                                   fromLocation: widget.fromLocation,
@@ -477,6 +480,13 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
                                 ),
                               ),
                             );
+                            if (selectedRoute != null && mounted) {
+                              setState(() {
+                                _activeRoute = selectedRoute;
+                                _isLoading = true;
+                              });
+                              _loadRiskData();
+                            }
                           },
                         ),
                       ),
@@ -485,18 +495,27 @@ class _RouteRiskScreenState extends State<RouteRiskScreen>
                         child: _OutlineButton(
                           label: 'Best Time',
                           icon: Icons.schedule_rounded,
-                          onTap: () {
-                            Navigator.push(
+                          onTap: () async {
+                            final selectedTime =
+                                await Navigator.push<DateTime>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => DepartureTimeScreen(
                                   location: widget.fromLocation,
-                                  date: widget.departureTime,
+                                  date: _activeDepartureTime,
                                   fromName: widget.fromName,
                                   toName: widget.toName,
+                                  route: _activeRoute,
                                 ),
                               ),
                             );
+                            if (selectedTime != null && mounted) {
+                              setState(() {
+                                _activeDepartureTime = selectedTime;
+                                _isLoading = true;
+                              });
+                              _loadRiskData();
+                            }
                           },
                         ),
                       ),

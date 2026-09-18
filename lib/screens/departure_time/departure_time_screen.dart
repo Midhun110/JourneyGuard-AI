@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../models/route_model.dart';
 import '../../models/weather_data.dart';
 import '../../services/risk_engine.dart';
 import '../../widgets/glass_card.dart';
@@ -14,6 +15,7 @@ class DepartureTimeScreen extends StatefulWidget {
   final DateTime date;
   final String fromName;
   final String toName;
+  final RouteModel? route;
 
   const DepartureTimeScreen({
     super.key,
@@ -21,6 +23,7 @@ class DepartureTimeScreen extends StatefulWidget {
     required this.date,
     required this.fromName,
     required this.toName,
+    this.route,
   });
 
   @override
@@ -41,15 +44,26 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
 
   Future<void> _loadData() async {
     try {
-      final results = await _riskEngine.getDepartureTimeRecommendations(
-        location: widget.location,
-        date: widget.date,
-      );
+      List<DepartureTimeWeather> results;
+      if (widget.route != null) {
+        // Module C: Run full Module A -> B segment-level pipeline across shifted departure timestamps
+        results = await _riskEngine.evaluateRouteAcrossDepartureTimes(
+          route: widget.route!,
+          date: widget.date,
+        );
+      } else {
+        // Fallback: Point query
+        results = await _riskEngine.getDepartureTimeRecommendations(
+          location: widget.location,
+          date: widget.date,
+        );
+      }
+
       if (mounted) {
         setState(() {
           _timeslots = results;
           _isLoading = false;
-          // Auto-select safest
+          // Auto-select safest slot
           int safestIdx = 0;
           double minRisk = double.infinity;
           for (int i = 0; i < results.length; i++) {
@@ -91,9 +105,16 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
             valueColor: AlwaysStoppedAnimation(AppColors.accentIndigo),
           ),
           const SizedBox(height: 20),
-          Text('Analyzing Departure Times', style: AppTypography.headlineSmall),
+          Text('Evaluating Route Across Times',
+              style: AppTypography.headlineSmall),
           const SizedBox(height: 8),
-          Text('Fetching 5 time windows...', style: AppTypography.bodyMedium),
+          Text(
+            widget.route != null
+                ? 'Re-running segment hazard pipeline for shifted windows...'
+                : 'Fetching hourly forecasts for departure windows...',
+            style: AppTypography.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
@@ -116,7 +137,30 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
           const SizedBox(height: 24),
 
           // Time slots
-          Text('All Departure Windows', style: AppTypography.headlineMedium),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Analyzed Departure Windows',
+                  style: AppTypography.headlineMedium),
+              if (widget.route != null)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentIndigo.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Full Route Pipeline',
+                    style: TextStyle(
+                      color: AppColors.accentIndigo,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 16),
           ..._timeslots.asMap().entries.map((entry) {
             final i = entry.key;
@@ -135,8 +179,8 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
                 isSelected: isSelected,
                 isSafest: isSafest,
                 onTap: () => setState(() => _selectedIndex = i),
-              ).animate().fadeIn(delay: Duration(milliseconds: i * 100))
-                  .slideX(begin: 0.2),
+              ).animate().fadeIn(delay: Duration(milliseconds: i * 80))
+                  .slideX(begin: 0.15),
             );
           }),
 
@@ -149,10 +193,12 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
 
           GradientButton(
             label: selected != null
-                ? 'Set Departure: ${selected.label}'
+                ? 'Select ${selected.label} Departure'
                 : 'Confirm Selection',
             icon: Icons.schedule_rounded,
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context, selected?.departureTime);
+            },
           ),
 
           const SizedBox(height: 32),
@@ -166,15 +212,22 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Journey Date',
-              style: AppTypography.labelSmall
-                  .copyWith(color: AppColors.textMuted)),
-          const SizedBox(height: 4),
-          Text(
-            DateFormat('EEEE, MMMM d, y').format(widget.date),
-            style: AppTypography.headlineSmall,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                DateFormat('EEEE, MMMM d, y').format(widget.date),
+                style: AppTypography.headlineSmall,
+              ),
+              if (widget.route != null)
+                Text(
+                  '${widget.route!.formattedDistance} • ${widget.route!.formattedDuration}',
+                  style: AppTypography.labelSmall
+                      .copyWith(color: AppColors.accentCyan),
+                ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Row(
             children: [
               const Icon(Icons.trip_origin_rounded,
@@ -210,12 +263,12 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [riskColor.withOpacity(0.15), riskColor.withOpacity(0.05)],
+          colors: [riskColor.withOpacity(0.18), riskColor.withOpacity(0.06)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: riskColor.withOpacity(0.3)),
+        border: Border.all(color: riskColor.withOpacity(0.4)),
       ),
       child: Row(
         children: [
@@ -232,19 +285,36 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Recommended: ${slot.label}',
-                  style: AppTypography.headlineSmall.copyWith(color: riskColor),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Optimal Window: ${slot.label}',
+                      style:
+                          AppTypography.headlineSmall.copyWith(color: riskColor),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Risk Score: ${slot.riskScore.toStringAsFixed(0)}% • '
-                  '${AppColors.riskLabel(slot.riskScore)} Risk',
+                  'Risk: ${slot.riskScore.toStringAsFixed(0)}% (${AppColors.riskLabel(slot.riskScore)})'
+                  '${slot.maxRisk > 0 ? " • Peak: ${slot.maxRisk.toStringAsFixed(0)}%" : ""}',
                   style: AppTypography.bodyMedium,
                 ),
+                if (slot.riskReductionVsBaseline > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '📉 ${slot.riskReductionVsBaseline.toStringAsFixed(0)}% lower risk than earliest departure',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.riskLow,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 2),
                 Text(
                   'Rain: ${slot.weather.rainProbability.toStringAsFixed(0)}% probability • '
-                  '${slot.weather.cumulativeRainfall.toStringAsFixed(1)}mm expected',
+                  '${slot.weather.cumulativeRainfall.toStringAsFixed(1)}mm rainfall',
                   style: AppTypography.bodySmall,
                 ),
               ],
@@ -252,7 +322,7 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
           ),
         ],
       ),
-    ).animate().fadeIn(delay: 200.ms, duration: 500.ms).scale(begin: const Offset(0.95, 0.95));
+    ).animate().fadeIn(delay: 150.ms, duration: 400.ms);
   }
 
   Widget _buildRiskBarChart() {
@@ -271,7 +341,16 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Risk by Departure Time', style: AppTypography.headlineSmall),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Corridor Risk by Time',
+                  style: AppTypography.headlineSmall),
+              Text('Lower is safer',
+                  style: AppTypography.labelSmall
+                      .copyWith(color: AppColors.textMuted)),
+            ],
+          ),
           const SizedBox(height: 20),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -281,8 +360,8 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
               final slot = entry.value;
               final color = AppColors.riskColor(slot.riskScore);
               final height = maxRisk > 0
-                  ? (slot.riskScore / maxRisk * 100).clamp(10.0, 100.0)
-                  : 10.0;
+                  ? (slot.riskScore / maxRisk * 100).clamp(12.0, 100.0)
+                  : 12.0;
 
               return GestureDetector(
                 onTap: () => setState(() => _selectedIndex = i),
@@ -290,25 +369,36 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
                   children: [
                     Text(
                       '${slot.riskScore.toStringAsFixed(0)}%',
-                      style: AppTypography.labelSmall.copyWith(color: color),
+                      style: AppTypography.labelSmall.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     AnimatedContainer(
-                      duration: const Duration(milliseconds: 600),
-                      width: 32,
+                      duration: const Duration(milliseconds: 500),
+                      width: 28,
                       height: height,
                       decoration: BoxDecoration(
                         color: _selectedIndex == i
                             ? color
-                            : color.withOpacity(0.4),
+                            : color.withOpacity(0.35),
                         borderRadius: BorderRadius.circular(6),
                         border: _selectedIndex == i
-                            ? Border.all(color: color, width: 2)
+                            ? Border.all(color: Colors.white, width: 2)
                             : null,
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(slot.label, style: AppTypography.bodySmall),
+                    Text(
+                      slot.label,
+                      style: AppTypography.bodySmall.copyWith(
+                        fontSize: 10,
+                        fontWeight: _selectedIndex == i
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -316,7 +406,7 @@ class _DepartureTimeScreenState extends State<DepartureTimeScreen> {
           ),
         ],
       ),
-    ).animate().fadeIn(delay: 300.ms);
+    ).animate().fadeIn(delay: 250.ms);
   }
 
   String _truncate(String s, int max) =>
@@ -346,7 +436,7 @@ class _TimeSlotCard extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: isSelected
               ? riskColor.withOpacity(0.08)
@@ -354,15 +444,15 @@ class _TimeSlotCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isSelected ? riskColor : AppColors.border,
-            width: isSelected ? 1.5 : 1,
+            width: isSelected ? 1.8 : 1,
           ),
         ),
         child: Row(
           children: [
             // Time badge
             Container(
-              width: 64,
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              width: 60,
+              padding: const EdgeInsets.symmetric(vertical: 8),
               decoration: BoxDecoration(
                 color: isSelected
                     ? riskColor.withOpacity(0.2)
@@ -373,14 +463,18 @@ class _TimeSlotCard extends StatelessWidget {
                 children: [
                   Icon(Icons.schedule_rounded, color: riskColor, size: 16),
                   const SizedBox(height: 4),
-                  Text(slot.label,
-                      style: AppTypography.labelLarge
-                          .copyWith(color: riskColor),
-                      textAlign: TextAlign.center),
+                  Text(
+                    slot.label,
+                    style: AppTypography.labelLarge.copyWith(
+                      color: riskColor,
+                      fontSize: 11,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 12),
             // Metrics
             Expanded(
               child: Column(
@@ -389,24 +483,27 @@ class _TimeSlotCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        '${AppColors.riskLabel(slot.riskScore)} Risk',
-                        style: AppTypography.headlineSmall
-                            .copyWith(color: riskColor),
+                        '${AppColors.riskLabel(slot.riskScore)} Risk (${slot.riskScore.toStringAsFixed(0)}%)',
+                        style: AppTypography.headlineSmall.copyWith(
+                          color: riskColor,
+                          fontSize: 14,
+                        ),
                       ),
                       if (isSafest) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
+                              horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
                             color: AppColors.riskLow.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
                             'SAFEST',
                             style: AppTypography.labelSmall.copyWith(
                               color: AppColors.riskLow,
-                              letterSpacing: 1,
+                              fontSize: 10,
+                              letterSpacing: 0.8,
                             ),
                           ),
                         ),
@@ -416,29 +513,35 @@ class _TimeSlotCard extends StatelessWidget {
                   const SizedBox(height: 6),
                   Row(
                     children: [
+                      if (slot.maxRisk > 0) ...[
+                        _Mini(
+                          icon: Icons.trending_up_rounded,
+                          label: 'Peak ${slot.maxRisk.toStringAsFixed(0)}%',
+                          iconColor: AppColors.riskColor(slot.maxRisk),
+                        ),
+                        const SizedBox(width: 10),
+                      ],
                       _Mini(
-                          icon: Icons.percent_rounded,
-                          label:
-                              '${slot.riskScore.toStringAsFixed(0)}% risk'),
-                      const SizedBox(width: 12),
+                        icon: Icons.water_drop_rounded,
+                        label:
+                            '${slot.weather.rainProbability.toStringAsFixed(0)}% rain',
+                        iconColor: AppColors.accentCyan,
+                      ),
+                      const SizedBox(width: 10),
                       _Mini(
-                          icon: Icons.water_drop_rounded,
-                          label:
-                              '${slot.weather.rainProbability.toStringAsFixed(0)}% rain'),
-                      const SizedBox(width: 12),
-                      _Mini(
-                          icon: Icons.opacity_rounded,
-                          label:
-                              '${slot.weather.cumulativeRainfall.toStringAsFixed(1)}mm'),
+                        icon: Icons.opacity_rounded,
+                        label:
+                            '${slot.weather.cumulativeRainfall.toStringAsFixed(1)}mm',
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
-            // Progress bar
+            // Progress circle
             SizedBox(
-              width: 40,
-              height: 40,
+              width: 38,
+              height: 38,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -446,11 +549,14 @@ class _TimeSlotCard extends StatelessWidget {
                     value: slot.riskScore / 100,
                     backgroundColor: AppColors.surfaceElevated,
                     valueColor: AlwaysStoppedAnimation(riskColor),
-                    strokeWidth: 4,
+                    strokeWidth: 3.5,
                   ),
                   Text(
                     '${slot.riskScore.toStringAsFixed(0)}',
-                    style: AppTypography.labelSmall.copyWith(color: riskColor),
+                    style: AppTypography.labelSmall.copyWith(
+                      color: riskColor,
+                      fontSize: 10,
+                    ),
                   ),
                 ],
               ),
@@ -465,17 +571,22 @@ class _TimeSlotCard extends StatelessWidget {
 class _Mini extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color? iconColor;
 
-  const _Mini({required this.icon, required this.label});
+  const _Mini({
+    required this.icon,
+    required this.label,
+    this.iconColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: AppColors.textMuted, size: 12),
+        Icon(icon, color: iconColor ?? AppColors.textMuted, size: 12),
         const SizedBox(width: 3),
-        Text(label, style: AppTypography.bodySmall),
+        Text(label, style: AppTypography.bodySmall.copyWith(fontSize: 11)),
       ],
     );
   }

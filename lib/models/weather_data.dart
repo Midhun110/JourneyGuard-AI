@@ -91,13 +91,23 @@ class DepartureTimeWeather {
   final String label;
   final WeatherData weather;
   final double riskScore;
+  final double maxRisk;
+  final double weightedAvgRisk;
+  final double riskReductionVsBaseline;
+  final bool isSafestSlot;
+  final DateTime? departureTime;
 
   const DepartureTimeWeather({
     required this.hour,
     required this.label,
     required this.weather,
     required this.riskScore,
+    this.maxRisk = 0.0,
+    this.weightedAvgRisk = 0.0,
+    this.riskReductionVsBaseline = 0.0,
+    this.isSafestSlot = false,
+    this.departureTime,
   });
 
-  bool get isSafest => riskScore < 30;
+  bool get isSafest => isSafestSlot || riskScore < 30;
 }

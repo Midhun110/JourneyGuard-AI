@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'core/theme/app_theme.dart';
-import 'screens/main/main_screen.dart';
+import 'screens/auth/auth_gate.dart';
 import 'services/theme_provider.dart';
 
 class JourneyGuardApp extends StatelessWidget {
@@ -24,7 +24,7 @@ class JourneyGuardApp extends StatelessWidget {
             themeMode: theme.themeMode,
             themeAnimationDuration: const Duration(milliseconds: 300),
             themeAnimationCurve: Curves.easeInOut,
-            home: const MainScreen(),
+            home: const AuthGate(),
           );
         },
       ),
