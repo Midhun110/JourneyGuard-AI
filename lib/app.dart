@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/auth/auth_gate.dart';
 import 'services/theme_provider.dart';
+import 'services/notification_service.dart';
+import 'widgets/heads_up_notification_overlay.dart';
 
 class JourneyGuardApp extends StatelessWidget {
   final ThemeProvider? themeProvider;
@@ -12,8 +14,15 @@ class JourneyGuardApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<ThemeProvider>(
-      create: (_) => themeProvider ?? ThemeProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => themeProvider ?? ThemeProvider(),
+        ),
+        ChangeNotifierProvider<NotificationService>(
+          create: (_) => NotificationService.instance,
+        ),
+      ],
       child: Consumer<ThemeProvider>(
         builder: (context, theme, _) {
           return MaterialApp(
@@ -24,6 +33,11 @@ class JourneyGuardApp extends StatelessWidget {
             themeMode: theme.themeMode,
             themeAnimationDuration: const Duration(milliseconds: 300),
             themeAnimationCurve: Curves.easeInOut,
+            builder: (context, child) {
+              return HeadsUpNotificationOverlay(
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             home: const AuthGate(),
           );
         },

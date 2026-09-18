@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../models/place_suggestion.dart';
 import '../../../services/location_service.dart';
 import '../../../services/routing_service.dart';
+import '../../../services/notification_service.dart';
 import '../../route_risk/route_risk_screen.dart';
 import '../../settings/settings_screen.dart';
+import '../../notifications/notification_center_screen.dart';
 
 class LovableHomeTab extends StatefulWidget {
   final VoidCallback? onSwitchToPlan;
@@ -28,8 +32,15 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
   bool _isAnalyzing = false;
   bool _isGettingLocation = false;
 
-  List<Map<String, dynamic>> _fromSuggestions = [];
-  List<Map<String, dynamic>> _toSuggestions = [];
+  Timer? _fromDebounceTimer;
+  Timer? _toDebounceTimer;
+  bool _isSearchingFrom = false;
+  bool _isSearchingTo = false;
+  bool _hasSearchedFrom = false;
+  bool _hasSearchedTo = false;
+
+  List<PlaceSuggestion> _fromSuggestions = [];
+  List<PlaceSuggestion> _toSuggestions = [];
   bool _showFromSuggestions = false;
   bool _showToSuggestions = false;
 
@@ -47,6 +58,8 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
 
   @override
   void dispose() {
+    _fromDebounceTimer?.cancel();
+    _toDebounceTimer?.cancel();
     _fromController.dispose();
     _toController.dispose();
     super.dispose();
@@ -73,55 +86,109 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
     }
   }
 
-  Future<void> _searchFrom(String query) async {
-    if (query.length < 3) {
-      setState(() => _fromSuggestions = []);
+  void _searchFrom(String query) {
+    _fromDebounceTimer?.cancel();
+    final cleanQuery = query.trim();
+    if (cleanQuery.length < 2) {
+      setState(() {
+        _fromSuggestions = [];
+        _showFromSuggestions = false;
+        _isSearchingFrom = false;
+        _hasSearchedFrom = false;
+      });
       return;
     }
-    final results = await _routingService.searchPlaces(query);
-    if (mounted) {
-      setState(() {
-        _fromSuggestions = results;
-        _showFromSuggestions = results.isNotEmpty;
-      });
-    }
-  }
 
-  Future<void> _searchTo(String query) async {
-    if (query.length < 3) {
-      setState(() => _toSuggestions = []);
-      return;
-    }
-    final results = await _routingService.searchPlaces(query);
-    if (mounted) {
-      setState(() {
-        _toSuggestions = results;
-        _showToSuggestions = results.isNotEmpty;
-      });
-    }
-  }
-
-  void _selectFromSuggestion(Map<String, dynamic> place) {
     setState(() {
-      _fromController.text = place['display_name'] as String;
-      _fromLatLng = LatLng(
-        double.parse(place['lat'] as String),
-        double.parse(place['lon'] as String),
-      );
-      _fromSuggestions = [];
-      _showFromSuggestions = false;
+      _isSearchingFrom = true;
+      _showFromSuggestions = true;
+      _hasSearchedFrom = false;
+    });
+
+    _fromDebounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final results = await _routingService.searchPlaceSuggestions(cleanQuery);
+        if (mounted) {
+          setState(() {
+            _fromSuggestions = results;
+            _isSearchingFrom = false;
+            _hasSearchedFrom = true;
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _fromSuggestions = [];
+            _isSearchingFrom = false;
+            _hasSearchedFrom = true;
+          });
+        }
+      }
     });
   }
 
-  void _selectToSuggestion(Map<String, dynamic> place) {
+  void _searchTo(String query) {
+    _toDebounceTimer?.cancel();
+    final cleanQuery = query.trim();
+    if (cleanQuery.length < 2) {
+      setState(() {
+        _toSuggestions = [];
+        _showToSuggestions = false;
+        _isSearchingTo = false;
+        _hasSearchedTo = false;
+      });
+      return;
+    }
+
     setState(() {
-      _toController.text = place['display_name'] as String;
-      _toLatLng = LatLng(
-        double.parse(place['lat'] as String),
-        double.parse(place['lon'] as String),
-      );
+      _isSearchingTo = true;
+      _showToSuggestions = true;
+      _hasSearchedTo = false;
+    });
+
+    _toDebounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        final results = await _routingService.searchPlaceSuggestions(cleanQuery);
+        if (mounted) {
+          setState(() {
+            _toSuggestions = results;
+            _isSearchingTo = false;
+            _hasSearchedTo = true;
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _toSuggestions = [];
+            _isSearchingTo = false;
+            _hasSearchedTo = true;
+          });
+        }
+      }
+    });
+  }
+
+  void _selectFromSuggestion(PlaceSuggestion place) {
+    _fromDebounceTimer?.cancel();
+    setState(() {
+      _fromController.text = place.name;
+      _fromLatLng = place.latLng;
+      _fromSuggestions = [];
+      _showFromSuggestions = false;
+      _isSearchingFrom = false;
+      _hasSearchedFrom = false;
+    });
+  }
+
+  void _selectToSuggestion(PlaceSuggestion place) {
+    _toDebounceTimer?.cancel();
+    setState(() {
+      _toController.text = place.name;
+      _toLatLng = place.latLng;
       _toSuggestions = [];
       _showToSuggestions = false;
+      _isSearchingTo = false;
+      _hasSearchedTo = false;
     });
   }
 
@@ -359,6 +426,66 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
         ),
         Row(
           children: [
+            // Notification Center button (Module G)
+            ListenableBuilder(
+              listenable: NotificationService.instance,
+              builder: (context, _) {
+                final unread = NotificationService.instance.unreadCount;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    IconButton(
+                      tooltip: 'Alerts & Push Notifications',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationCenterScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.notifications_outlined,
+                        color: AppColors.lovableTeal,
+                        size: 21,
+                      ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.surfaceFor(context),
+                        padding: const EdgeInsets.all(10),
+                        side: BorderSide(color: AppColors.borderFor(context)),
+                      ),
+                    ),
+                    if (unread > 0)
+                      Positioned(
+                        right: 4,
+                        top: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.riskCritical,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Center(
+                            child: Text(
+                              unread > 9 ? '9+' : '$unread',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(width: 8),
             // Settings button (Requirement 1)
             IconButton(
               tooltip: 'Settings & Theme',
@@ -498,16 +625,38 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: Icon(Icons.gps_fixed, size: 18, color: AppColors.textMutedFor(context)),
-                onPressed: _useMyLocation,
-                tooltip: 'Current location',
-              ),
+              if (_isSearchingFrom)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Padding(
+                    padding: EdgeInsets.all(2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.lovableGreen),
+                    ),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: Icon(Icons.gps_fixed, size: 18, color: AppColors.textMutedFor(context)),
+                  onPressed: _useMyLocation,
+                  tooltip: 'Current location',
+                ),
             ],
           ),
 
-          if (_showFromSuggestions && _fromSuggestions.isNotEmpty)
-            _buildSuggestionsList(_fromSuggestions, _selectFromSuggestion),
+          if (_showFromSuggestions &&
+              (_isSearchingFrom ||
+                  _fromSuggestions.isNotEmpty ||
+                  (_hasSearchedFrom && _fromSuggestions.isEmpty)))
+            _buildSuggestionsDropdown(
+              isSearching: _isSearchingFrom,
+              hasSearched: _hasSearchedFrom,
+              suggestions: _fromSuggestions,
+              onSelect: _selectFromSuggestion,
+              accentColor: AppColors.lovableGreen,
+            ),
 
           // Connector line
           Padding(
@@ -579,7 +728,7 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
                         isDense: true,
                         contentPadding: const EdgeInsets.symmetric(vertical: 4),
                         border: InputBorder.none,
-                        hintText: 'Enter destination',
+                        hintText: 'Enter destination (e.g. Munnar, Punalur)',
                         hintStyle: TextStyle(color: AppColors.textMutedFor(context)),
                       ),
                       onChanged: _searchTo,
@@ -587,48 +736,188 @@ class _LovableHomeTabState extends State<LovableHomeTab> {
                   ],
                 ),
               ),
-              Icon(Icons.search, size: 20, color: AppColors.textMutedFor(context)),
+              if (_isSearchingTo)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: Padding(
+                    padding: EdgeInsets.all(2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.lovableTeal),
+                    ),
+                  ),
+                )
+              else if (_toController.text.isNotEmpty)
+                GestureDetector(
+                  onTap: () {
+                    _toController.clear();
+                    _searchTo('');
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: AppColors.textMutedFor(context),
+                    ),
+                  ),
+                )
+              else
+                Icon(Icons.search, size: 20, color: AppColors.textMutedFor(context)),
             ],
           ),
 
-          if (_showToSuggestions && _toSuggestions.isNotEmpty)
-            _buildSuggestionsList(_toSuggestions, _selectToSuggestion),
+          if (_showToSuggestions &&
+              (_isSearchingTo ||
+                  _toSuggestions.isNotEmpty ||
+                  (_hasSearchedTo && _toSuggestions.isEmpty)))
+            _buildSuggestionsDropdown(
+              isSearching: _isSearchingTo,
+              hasSearched: _hasSearchedTo,
+              suggestions: _toSuggestions,
+              onSelect: _selectToSuggestion,
+              accentColor: AppColors.lovableTeal,
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildSuggestionsList(
-    List<Map<String, dynamic>> suggestions,
-    Function(Map<String, dynamic>) onSelect,
-  ) {
+  Widget _buildSuggestionsDropdown({
+    required bool isSearching,
+    required bool hasSearched,
+    required List<PlaceSuggestion> suggestions,
+    required Function(PlaceSuggestion) onSelect,
+    required Color accentColor,
+  }) {
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      constraints: const BoxConstraints(maxHeight: 180),
+      constraints: const BoxConstraints(maxHeight: 220),
       decoration: BoxDecoration(
         color: AppColors.surfaceElevatedFor(context),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.borderFor(context)),
+        boxShadow: AppColors.cardShadowFor(context),
       ),
-      child: ListView.separated(
-        shrinkWrap: true,
-        padding: const EdgeInsets.all(4),
-        itemCount: suggestions.length,
-        separatorBuilder: (_, __) => Divider(color: AppColors.borderFor(context), height: 1),
-        itemBuilder: (ctx, i) {
-          final s = suggestions[i];
-          return ListTile(
-            dense: true,
-            leading: const Icon(Icons.place_outlined, size: 18, color: AppColors.lovableTeal),
-            title: Text(
-              s['display_name'] ?? '',
-              style: TextStyle(color: AppColors.textPrimaryFor(context), fontSize: 13),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            onTap: () => onSelect(s),
-          );
-        },
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: isSearching
+            ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(accentColor),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Searching matching places...',
+                      style: TextStyle(
+                        color: AppColors.textMutedFor(context),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : (hasSearched && suggestions.isEmpty)
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.search_off_rounded,
+                          size: 20,
+                          color: AppColors.textMutedFor(context),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'No places found',
+                              style: TextStyle(
+                                color: AppColors.textPrimaryFor(context),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Check spelling or try searching another city',
+                              style: TextStyle(
+                                color: AppColors.textMutedFor(context),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: suggestions.length,
+                    separatorBuilder: (_, __) => Divider(
+                      color: AppColors.borderFor(context),
+                      height: 1,
+                    ),
+                    itemBuilder: (ctx, i) {
+                      final s = suggestions[i];
+                      return ListTile(
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                        leading: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.location_on_outlined,
+                            size: 18,
+                            color: accentColor,
+                          ),
+                        ),
+                        title: Text(
+                          s.name,
+                          style: TextStyle(
+                            color: AppColors.textPrimaryFor(context),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: s.districtState.isNotEmpty
+                            ? Text(
+                                s.districtState,
+                                style: TextStyle(
+                                  color: AppColors.textMutedFor(context),
+                                  fontSize: 11.5,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : null,
+                        trailing: Icon(
+                          Icons.north_west_rounded,
+                          size: 14,
+                          color: AppColors.textMutedFor(context).withValues(alpha: 0.6),
+                        ),
+                        onTap: () => onSelect(s),
+                      );
+                    },
+                  ),
       ),
     );
   }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:intl/intl.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../models/route_model.dart';
+import '../../models/saved_route_model.dart';
 import '../../services/risk_engine.dart';
+import '../../services/notification_service.dart';
 import '../../widgets/glass_card.dart';
 import '../../widgets/risk_badge.dart';
 import '../../widgets/gradient_button.dart';
@@ -60,7 +63,8 @@ class _RouteComparisonScreenState extends State<RouteComparisonScreen> {
         riskWeight: _riskWeight,
         timeWeight: _timeWeight,
         useConservativeMax: _useConservativeMax,
-      );
+      ).timeout(const Duration(seconds: 5));
+
       if (mounted) {
         setState(() {
           _comparisonResult = result;
@@ -70,7 +74,21 @@ class _RouteComparisonScreenState extends State<RouteComparisonScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        final fallback = await _riskEngine.compareRoutesDetailed(
+          routes: const [],
+          departureTime: widget.departureTime,
+          riskWeight: _riskWeight,
+          timeWeight: _timeWeight,
+          useConservativeMax: _useConservativeMax,
+        );
+        setState(() {
+          _comparisonResult = fallback;
+          _comparisons = fallback.comparisons;
+          _isLoading = false;
+          _selectedIndex = 0;
+        });
+      }
     }
   }
 
@@ -209,12 +227,20 @@ class _RouteComparisonScreenState extends State<RouteComparisonScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.backgroundFor(context),
       appBar: AppBar(
         backgroundColor: Colors.transparent,
-        title: Text('Route Comparison', style: AppTypography.headlineMedium),
+        title: Text(
+          'Route Comparison',
+          style: AppTypography.headlineMedium.copyWith(
+            color: AppColors.textPrimaryFor(context),
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: AppColors.textPrimaryFor(context),
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -312,6 +338,7 @@ class _RouteComparisonScreenState extends State<RouteComparisonScreen> {
                 isSelected: _selectedIndex == i,
                 riskWeight: _riskWeight,
                 timeWeight: _timeWeight,
+                departureTime: widget.departureTime,
                 onTap: () => setState(() => _selectedIndex = i),
               ).animate().fadeIn(delay: Duration(milliseconds: i * 120))
                   .slideX(begin: 0.15),
@@ -333,6 +360,82 @@ class _RouteComparisonScreenState extends State<RouteComparisonScreen> {
             onPressed: () {
               Navigator.pop(
                   context, _comparisons[_selectedIndex].route);
+            },
+          ),
+          const SizedBox(height: 12),
+
+          ListenableBuilder(
+            listenable: NotificationService.instance,
+            builder: (context, _) {
+              final notifService = NotificationService.instance;
+              final isMonitored = notifService.isRouteMonitored(
+                widget.fromName,
+                widget.toName,
+              );
+
+              return SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor:
+                        isMonitored ? AppColors.lovableGreen : Colors.white,
+                    side: BorderSide(
+                      color: isMonitored
+                          ? AppColors.lovableGreen
+                          : AppColors.border,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: Icon(
+                    isMonitored
+                        ? Icons.notifications_active_rounded
+                        : Icons.notification_add_outlined,
+                    size: 18,
+                    color: isMonitored ? AppColors.lovableGreen : Colors.white70,
+                  ),
+                  label: Text(
+                    isMonitored
+                        ? 'Pre-Departure Push Monitoring Active'
+                        : 'Monitor Selected Corridor Before Departure',
+                    style:
+                        const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                  onPressed: () async {
+                    if (_comparisons.isEmpty) return;
+                    final selected = _comparisons[_selectedIndex];
+                    final saved = SavedRouteModel(
+                      id: 'saved_${DateTime.now().millisecondsSinceEpoch}',
+                      name: '${widget.fromName} → ${widget.toName}',
+                      fromName: widget.fromName,
+                      toName: widget.toName,
+                      fromLatitude: widget.fromLocation.latitude,
+                      fromLongitude: widget.fromLocation.longitude,
+                      toLatitude: widget.toLocation.latitude,
+                      toLongitude: widget.toLocation.longitude,
+                      departureTime: widget.departureTime,
+                      initialRiskScore: selected.riskScore,
+                      isMonitored: true,
+                      savedAt: DateTime.now(),
+                      summary: selected.route.summary,
+                    );
+                    await notifService.saveRoute(saved);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Route saved! Push notifications enabled for risk spikes & nearby hazards.',
+                          ),
+                          backgroundColor: AppColors.lovableTealDark,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              );
             },
           ),
           const SizedBox(height: 12),
@@ -683,7 +786,7 @@ class _RouteComparisonScreenState extends State<RouteComparisonScreen> {
   TableRow _tableRow(List<String> cells, {bool isHeader = false}) {
     return TableRow(
       decoration: isHeader
-          ? BoxDecoration(
+          ? const BoxDecoration(
               border: Border(bottom: BorderSide(color: AppColors.border)))
           : null,
       children: cells.map((cell) {
@@ -731,6 +834,7 @@ class _RouteCard extends StatelessWidget {
   final bool isSelected;
   final double riskWeight;
   final double timeWeight;
+  final DateTime departureTime;
   final VoidCallback onTap;
 
   const _RouteCard({
@@ -738,6 +842,7 @@ class _RouteCard extends StatelessWidget {
     required this.isSelected,
     required this.riskWeight,
     required this.timeWeight,
+    required this.departureTime,
     required this.onTap,
   });
 
@@ -754,6 +859,10 @@ class _RouteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final riskColor = AppColors.riskColor(comparison.riskScore);
+    final isDark = AppColors.isDark(context);
+    final isSafestOrTop = comparison.isSafest || comparison.rank == 1;
+    final eta = departureTime
+        .add(Duration(seconds: comparison.route.durationSeconds.round()));
 
     return GestureDetector(
       onTap: onTap,
@@ -762,18 +871,33 @@ class _RouteCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isSelected
-              ? _tagColor.withOpacity(0.08)
-              : AppColors.surface,
+              ? (isDark
+                  ? _tagColor.withValues(alpha: 0.14)
+                  : const Color(0xFFF0FDF4))
+              : (isDark ? AppColors.surfaceFor(context) : Colors.white),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? _tagColor : AppColors.border,
+            color: isSelected
+                ? (isDark ? _tagColor : const Color(0xFF10B981))
+                : (isDark ? AppColors.borderFor(context) : const Color(0xFFE2E8F0)),
             width: isSelected ? 2 : 1,
           ),
+          boxShadow: isSelected
+              ? (isDark
+                  ? AppColors.cardShadowFor(context)
+                  : [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.18),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ])
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top row: Rank badge + Tag + Risk badge
+            // Top row: Rank badge + AI Recommended Badge + Risk badge
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -783,7 +907,7 @@ class _RouteCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: _tagColor.withOpacity(0.18),
+                        color: _tagColor.withValues(alpha: 0.18),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -800,9 +924,47 @@ class _RouteCard extends StatelessWidget {
                       comparison.label,
                       style: AppTypography.headlineSmall.copyWith(
                         color: _tagColor,
-                        fontSize: 15,
+                        fontSize: 14.5,
                       ),
                     ),
+                    if (isSafestOrTop) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF10B981), Color(0xFF0D9488)],
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF10B981)
+                                  .withValues(alpha: 0.35),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.auto_awesome,
+                                color: Colors.white, size: 10.5),
+                            SizedBox(width: 3.5),
+                            Text(
+                              'AI Recommended',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 RiskBadge(score: comparison.riskScore),
@@ -814,52 +976,58 @@ class _RouteCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: AppColors.surfaceElevated,
+                color: isDark
+                    ? AppColors.surfaceElevatedFor(context)
+                    : const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(
+                  color: isDark
+                      ? AppColors.borderFor(context)
+                      : const Color(0xFFE2E8F0),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.calculate_outlined,
-                      size: 14, color: AppColors.textMuted),
+                  Icon(Icons.calculate_outlined,
+                      size: 14, color: AppColors.textMutedFor(context)),
                   const SizedBox(width: 6),
                   Text(
                     'Score: ${comparison.combinedScore.toStringAsFixed(1)}',
                     style: AppTypography.labelSmall.copyWith(
-                      color: AppColors.textPrimary,
+                      color: AppColors.textPrimaryFor(context),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   const Spacer(),
                   Text(
                     'Risk ${(riskWeight * 100).toStringAsFixed(0)}% + Time ${(timeWeight * 100).toStringAsFixed(0)}%',
-                    style: AppTypography.labelSmall
-                        .copyWith(color: AppColors.textMuted, fontSize: 10),
+                    style: AppTypography.labelSmall.copyWith(
+                        color: AppColors.textMutedFor(context), fontSize: 10),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
 
-            // Metrics row
+            // Metrics row: Distance, ETA, Rainfall
             Row(
               children: [
                 _MetricChip(
                   icon: Icons.straighten_rounded,
                   value: comparison.route.formattedDistance,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSecondaryFor(context),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _MetricChip(
-                  icon: Icons.schedule_rounded,
-                  value: comparison.route.formattedDuration,
-                  color: AppColors.textSecondary,
+                  icon: Icons.flag_rounded,
+                  value: 'ETA ${DateFormat('h:mm a').format(eta)}',
+                  color: AppColors.lovableGreen,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 _MetricChip(
                   icon: Icons.water_drop_rounded,
                   value:
-                      '${comparison.rainProbability.toStringAsFixed(0)}% rain',
+                      '${comparison.cumulativeRainfall.toStringAsFixed(1)} mm rain',
                   color: AppColors.accentCyan,
                 ),
               ],
@@ -879,7 +1047,7 @@ class _RouteCard extends StatelessWidget {
                   'Avg: ${comparison.weightedAvgRisk.toStringAsFixed(0)}% • Peak hazard: ${comparison.maxRisk.toStringAsFixed(0)}%',
                   style: AppTypography.bodySmall.copyWith(
                     fontSize: 11,
-                    color: AppColors.textMuted,
+                    color: AppColors.textMutedFor(context),
                   ),
                 ),
               ],
@@ -891,7 +1059,7 @@ class _RouteCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
                 value: comparison.riskScore / 100,
-                backgroundColor: AppColors.surfaceElevated,
+                backgroundColor: AppColors.surfaceElevatedFor(context),
                 valueColor: AlwaysStoppedAnimation(riskColor),
                 minHeight: 5,
               ),
@@ -923,11 +1091,11 @@ class _PresetChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           color: isActive
-              ? AppColors.accentIndigo.withOpacity(0.2)
-              : AppColors.surfaceElevated,
+              ? AppColors.accentIndigo.withValues(alpha: 0.2)
+              : AppColors.surfaceElevatedFor(context),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isActive ? AppColors.accentIndigo : AppColors.border,
+            color: isActive ? AppColors.accentIndigo : AppColors.borderFor(context),
             width: isActive ? 1.5 : 1,
           ),
         ),
@@ -937,7 +1105,7 @@ class _PresetChip extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
-            color: isActive ? AppColors.accentIndigo : AppColors.textSecondary,
+            color: isActive ? AppColors.accentIndigo : AppColors.textSecondaryFor(context),
           ),
         ),
       ),

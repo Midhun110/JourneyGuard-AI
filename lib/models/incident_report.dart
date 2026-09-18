@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import '../core/constants/supabase_constants.dart';
 
 class IncidentReport {

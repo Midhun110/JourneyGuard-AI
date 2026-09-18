@@ -22,16 +22,12 @@ class AppConstants {
   static const double defaultRiskWeight = 0.70; // Safety-first default
   static const double defaultTimeWeight = 0.30;
 
-  // Departure Time Options (24h)
-  static const List<int> departureHours = [6, 8, 10, 12, 14, 16, 18];
+  // Departure Time Options (8 AM, 12 PM, 4 PM)
+  static const List<int> departureHours = [8, 12, 16];
   static const List<String> departureLabels = [
-    '6 AM',
     '8 AM',
-    '10 AM',
     '12 PM',
-    '2 PM',
     '4 PM',
-    '6 PM'
   ];
 
   // Route Segment Distance (meters)

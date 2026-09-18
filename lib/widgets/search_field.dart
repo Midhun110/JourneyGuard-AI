@@ -57,7 +57,7 @@ class _SearchFieldState extends State<SearchField> {
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: AppColors.accentIndigo.withOpacity(0.15),
+                  color: AppColors.accentIndigo.withValues(alpha: 0.15),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),

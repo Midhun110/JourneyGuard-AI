@@ -3,6 +3,7 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../services/routing_service.dart';
 import '../../route_risk/route_risk_screen.dart';
+import '../../notifications/notification_center_screen.dart';
 
 class LovablePlanTab extends StatefulWidget {
   const LovablePlanTab({super.key});
@@ -662,6 +663,41 @@ class _LovablePlanTabState extends State<LovablePlanTab> {
                 style: TextStyle(
                   color: AppColors.lovableTeal,
                   fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const NotificationCenterScreen(),
+              ),
+            );
+          },
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 44),
+            backgroundColor: isDark ? Colors.transparent : Colors.white,
+            side: BorderSide(
+              color: isDark ? const Color(0xFF2E3D56) : AppColors.borderFor(context),
+            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.notifications_active_outlined,
+                  color: AppColors.lovableGreen, size: 18),
+              SizedBox(width: 8),
+              Text(
+                'Pre-Departure Push Alerts & Triggers',
+                style: TextStyle(
+                  color: AppColors.lovableGreen,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),

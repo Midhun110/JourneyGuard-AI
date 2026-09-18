@@ -93,6 +93,11 @@ class RouteComparison {
   String get riskClassification => RiskSegment.classifyRiskLevel(riskScore);
   String get peakRiskClassification => RiskSegment.classifyRiskLevel(maxRisk);
 
+  double get cumulativeRainfall {
+    if (segments.isEmpty) return 0.0;
+    return segments.fold(0.0, (acc, s) => acc + s.weather.cumulativeRainfall);
+  }
+
   RouteComparison copyWith({
     RouteModel? route,
     double? riskScore,

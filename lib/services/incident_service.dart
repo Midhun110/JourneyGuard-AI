@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:latlong2/latlong.dart';
 import '../models/incident_report.dart';
 import 'supabase_service.dart';
+import 'notification_service.dart';
 
 class IncidentQueryMatch {
   final double score; // 0-100
@@ -40,6 +41,7 @@ class IncidentService {
   /// Synchronous local addition for testing and immediate risk engine feedback
   void addReport(IncidentReport report) {
     _reports.insert(0, report);
+    NotificationService.instance.checkIncidentAgainstSavedRoutes(report);
   }
 
   /// Module D: Submit report, upload to Supabase PostGIS, and cache locally
@@ -47,7 +49,10 @@ class IncidentService {
     // 1. Add to local store immediately for instant Module B risk calculation
     _reports.insert(0, report);
 
-    // 2. Persist to Supabase PostgreSQL + PostGIS
+    // 2. Trigger push notification check against saved corridors (Module G)
+    NotificationService.instance.checkIncidentAgainstSavedRoutes(report);
+
+    // 3. Persist to Supabase PostgreSQL + PostGIS
     try {
       final persisted = await SupabaseService.instance.insertIncident(report);
       if (persisted != null && persisted.id != null) {
