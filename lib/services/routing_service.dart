@@ -73,6 +73,7 @@ class RoutingService {
       summary: primary.summary.isNotEmpty
           ? '${primary.summary} (Bypass)'
           : 'Seaport–Airport Rd Bypass',
+      isEstimated: true,
     ));
 
     // Route 3: Expressway corridor (+18% distance, +14% duration)
@@ -84,6 +85,7 @@ class RoutingService {
       summary: primary.summary.isNotEmpty
           ? '${primary.summary} (Expressway)'
           : 'Infopark Expressway Corridor',
+      isEstimated: true,
     ));
 
     return list;
@@ -134,6 +136,7 @@ class RoutingService {
       distanceMeters: distMeters,
       durationSeconds: durSecs,
       summary: 'NH 66 Primary Corridor',
+      isEstimated: true,
     );
 
     return _generateAlternativeRoutes(r1, origin, destination);

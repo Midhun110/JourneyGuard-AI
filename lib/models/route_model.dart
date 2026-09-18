@@ -6,12 +6,14 @@ class RouteModel {
   final double distanceMeters;
   final double durationSeconds;
   final String summary;
+  final bool isEstimated;
 
   const RouteModel({
     required this.coordinates,
     required this.distanceMeters,
     required this.durationSeconds,
     required this.summary,
+    this.isEstimated = false,
   });
 
   double get distanceKm => distanceMeters / 1000;
@@ -47,6 +49,23 @@ class RouteModel {
       distanceMeters: (route['distance'] as num).toDouble(),
       durationSeconds: (route['duration'] as num).toDouble(),
       summary: summary,
+      isEstimated: false,
+    );
+  }
+
+  RouteModel copyWith({
+    List<LatLng>? coordinates,
+    double? distanceMeters,
+    double? durationSeconds,
+    String? summary,
+    bool? isEstimated,
+  }) {
+    return RouteModel(
+      coordinates: coordinates ?? this.coordinates,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      summary: summary ?? this.summary,
+      isEstimated: isEstimated ?? this.isEstimated,
     );
   }
 }
@@ -60,6 +79,7 @@ class RouteComparison {
   final double riskScore; // Active route-level risk score (0-100)
   final double rainProbability; // 0-100 %
   final String label; // 'Safest', 'Fastest Acceptable', 'Balanced', etc.
+  final bool isEstimated;
 
   // Module C Extended Metrics
   final List<RiskSegment> segments;
@@ -78,6 +98,7 @@ class RouteComparison {
     required this.riskScore,
     required this.rainProbability,
     required this.label,
+    this.isEstimated = false,
     this.segments = const [],
     this.weightedAvgRisk = 0.0,
     this.maxRisk = 0.0,
@@ -103,6 +124,7 @@ class RouteComparison {
     double? riskScore,
     double? rainProbability,
     String? label,
+    bool? isEstimated,
     List<RiskSegment>? segments,
     double? weightedAvgRisk,
     double? maxRisk,
@@ -119,6 +141,7 @@ class RouteComparison {
       riskScore: riskScore ?? this.riskScore,
       rainProbability: rainProbability ?? this.rainProbability,
       label: label ?? this.label,
+      isEstimated: isEstimated ?? this.isEstimated,
       segments: segments ?? this.segments,
       weightedAvgRisk: weightedAvgRisk ?? this.weightedAvgRisk,
       maxRisk: maxRisk ?? this.maxRisk,

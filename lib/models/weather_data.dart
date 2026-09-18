@@ -96,6 +96,7 @@ class DepartureTimeWeather {
   final double riskReductionVsBaseline;
   final bool isSafestSlot;
   final DateTime? departureTime;
+  final bool isEstimated;
 
   const DepartureTimeWeather({
     required this.hour,
@@ -107,6 +108,7 @@ class DepartureTimeWeather {
     this.riskReductionVsBaseline = 0.0,
     this.isSafestSlot = false,
     this.departureTime,
+    this.isEstimated = false,
   });
 
   bool get isSafest => isSafestSlot || riskScore < 30;

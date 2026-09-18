@@ -524,50 +524,98 @@ class _TimeSlotCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        '${AppColors.riskLabel(slot.riskScore)} Risk (${slot.riskScore.toStringAsFixed(0)}%)',
-                        style: AppTypography.headlineSmall.copyWith(
-                          color: riskColor,
-                          fontSize: 14,
-                        ),
-                      ),
-                      if (isSafest) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF10B981), Color(0xFF0D9488)],
-                            ),
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
+                      Expanded(
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            Text(
+                              '${AppColors.riskLabel(slot.riskScore)} Risk (${slot.riskScore.toStringAsFixed(0)}%)',
+                              style: AppTypography.headlineSmall.copyWith(
+                                color: riskColor,
+                                fontSize: 14,
                               ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.stars_rounded,
-                                  color: Colors.white, size: 11),
-                              const SizedBox(width: 3),
-                              Text(
-                                'SAFEST TIME',
-                                style: AppTypography.labelSmall.copyWith(
-                                  color: Colors.white,
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 0.5,
+                            ),
+                            if (isSafest)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFF10B981), Color(0xFF0D9488)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFF10B981)
+                                          .withValues(alpha: 0.35),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.stars_rounded,
+                                        color: Colors.white, size: 11),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      'SAFEST TIME',
+                                      style: AppTypography.labelSmall.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
+                            if (slot.isEstimated)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isDark
+                                      ? const Color(0xFF334155)
+                                      : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isDark
+                                        ? const Color(0xFF64748B)
+                                        : const Color(0xFFCBD5E1),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.insights_rounded,
+                                      size: 10,
+                                      color: isDark
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF64748B),
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      '~estimated',
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark
+                                            ? const Color(0xFF94A3B8)
+                                            : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
-                      ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),

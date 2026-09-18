@@ -33,6 +33,7 @@ class IncidentService {
     _seedHistoricalIncidents();
   }
   static final IncidentService instance = IncidentService._();
+  factory IncidentService() => instance;
 
   final List<IncidentReport> _reports = [];
 
@@ -153,8 +154,6 @@ class IncidentService {
   }
 
   void _seedHistoricalIncidents() {
-    final now = DateTime.now();
-
     _reports.addAll([
       // Munnar Gap Road (NH 85)
       IncidentReport(
@@ -162,7 +161,7 @@ class IncidentService {
         longitude: 77.0780,
         incidentType: 'Landslide',
         description: 'Major rockfall and debris blocked both lanes near Munnar Gap Road.',
-        reportedAt: now.subtract(const Duration(hours: 4)),
+        reportedAt: DateTime(2025, 7, 14, 10, 30),
         locationName: 'NH 85 Munnar Gap Road',
       ),
       IncidentReport(
@@ -170,7 +169,7 @@ class IncidentService {
         longitude: 76.8920,
         incidentType: 'Tree Fall',
         description: 'Uprooted tree obstructing ghat traffic near Cheeyappara waterfalls.',
-        reportedAt: now.subtract(const Duration(days: 2)),
+        reportedAt: DateTime(2025, 6, 22, 14, 15),
         locationName: 'Neriamangalam - Adimali Ghat',
       ),
 
@@ -180,7 +179,7 @@ class IncidentService {
         longitude: 76.0150,
         incidentType: 'Landslide',
         description: 'Mudslide on 6th hairpin bend causing vehicular blockage.',
-        reportedAt: now.subtract(const Duration(hours: 12)),
+        reportedAt: DateTime(2025, 8, 5, 8, 45),
         locationName: 'Thamarassery Churam Hairpin 6',
       ),
       IncidentReport(
@@ -188,7 +187,7 @@ class IncidentService {
         longitude: 76.1520,
         incidentType: 'Landslide',
         description: 'Severe hillside soil slip and flash flood runoff across bridge.',
-        reportedAt: now.subtract(const Duration(days: 14)),
+        reportedAt: DateTime(2024, 7, 30, 2, 17),
         locationName: 'Chooralmala - Meppadi Route',
       ),
 
@@ -198,7 +197,7 @@ class IncidentService {
         longitude: 76.4380,
         incidentType: 'Waterlogging',
         description: 'Kuttanad polder water level overflowing onto AC road carriageway.',
-        reportedAt: now.subtract(const Duration(hours: 18)),
+        reportedAt: DateTime(2025, 8, 12, 16, 0),
         locationName: 'Alappuzha-Changanassery Road (Nedumudi)',
       ),
       IncidentReport(
@@ -206,7 +205,7 @@ class IncidentService {
         longitude: 76.3890,
         incidentType: 'Flood',
         description: 'Water submerging service lanes near Pallathuruthy bridge.',
-        reportedAt: now.subtract(const Duration(days: 3)),
+        reportedAt: DateTime(2025, 7, 28, 11, 20),
         locationName: 'Pallathuruthy Bridge, AC Road',
       ),
 
@@ -216,7 +215,7 @@ class IncidentService {
         longitude: 76.4480,
         incidentType: 'Road Damage',
         description: 'River embankment erosion damaged asphalt shoulder.',
-        reportedAt: now.subtract(const Duration(days: 5)),
+        reportedAt: DateTime(2025, 8, 19, 9, 10),
         locationName: 'Chalakudy-Athirappilly Road',
       ),
 
@@ -226,7 +225,7 @@ class IncidentService {
         longitude: 76.9680,
         incidentType: 'Landslide',
         description: 'Minor earth collapse after continuous evening showers.',
-        reportedAt: now.subtract(const Duration(hours: 6)),
+        reportedAt: DateTime(2025, 8, 2, 18, 30),
         locationName: 'Cheruthoni - Kattappana Road',
       ),
     ]);

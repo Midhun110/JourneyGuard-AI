@@ -294,10 +294,10 @@ class RiskEngine {
     // Ensure we always have 2-3 routes to compare
     List<RouteModel> targetRoutes = routes;
     if (targetRoutes.isEmpty) {
-      targetRoutes = RoutingService().fetchRoutes(
+      targetRoutes = await RoutingService().fetchRoutes(
         origin: const LatLng(9.9816, 76.2999),
         destination: const LatLng(10.1520, 76.3922),
-      ) as dynamic;
+      );
     }
 
     try {
@@ -310,6 +310,7 @@ class RiskEngine {
                 distanceMeters: 24800,
                 durationSeconds: 2460,
                 summary: 'NH 66 Primary Corridor',
+                isEstimated: true,
               );
         final list = List<RouteModel>.from(targetRoutes);
         if (list.isEmpty) list.add(base);
@@ -319,6 +320,7 @@ class RiskEngine {
             distanceMeters: base.distanceMeters * 1.12,
             durationSeconds: base.durationSeconds * 0.95,
             summary: 'Seaport–Airport Rd Bypass',
+            isEstimated: true,
           ));
         }
         if (list.length < 3) {
@@ -327,6 +329,7 @@ class RiskEngine {
             distanceMeters: base.distanceMeters * 1.18,
             durationSeconds: base.durationSeconds * 1.14,
             summary: 'Infopark Expressway Corridor',
+            isEstimated: true,
           ));
         }
         targetRoutes = list;
@@ -379,6 +382,7 @@ class RiskEngine {
           maxRisk: maxRisk,
           normalizedDuration: normDuration,
           combinedScore: combinedScore,
+          isEstimated: route.isEstimated,
         ));
       }
 
@@ -497,30 +501,36 @@ class RiskEngine {
     double timeWeight,
     bool useConservativeMax,
   ) {
-    final r1 = routes.isNotEmpty
-        ? routes[0]
-        : const RouteModel(
-            coordinates: [LatLng(9.9816, 76.2999), LatLng(10.1520, 76.3922)],
-            distanceMeters: 24800,
-            durationSeconds: 2460,
-            summary: 'NH 66 · Edappally',
-          );
-    final r2 = routes.length > 1
-        ? routes[1]
-        : RouteModel(
-            coordinates: r1.coordinates,
-            distanceMeters: r1.distanceMeters * 1.12,
-            durationSeconds: r1.durationSeconds * 0.95,
-            summary: 'Seaport–Airport Rd Bypass',
-          );
-    final r3 = routes.length > 2
-        ? routes[2]
-        : RouteModel(
-            coordinates: r1.coordinates,
-            distanceMeters: r1.distanceMeters * 1.18,
-            durationSeconds: r1.durationSeconds * 1.14,
-            summary: 'Infopark Expressway Corridor',
-          );
+    final r1 = (routes.isNotEmpty
+            ? routes[0]
+            : const RouteModel(
+                coordinates: [LatLng(9.9816, 76.2999), LatLng(10.1520, 76.3922)],
+                distanceMeters: 24800,
+                durationSeconds: 2460,
+                summary: 'NH 66 · Edappally',
+                isEstimated: true,
+              ))
+        .copyWith(isEstimated: true);
+    final r2 = (routes.length > 1
+            ? routes[1]
+            : RouteModel(
+                coordinates: r1.coordinates,
+                distanceMeters: r1.distanceMeters * 1.12,
+                durationSeconds: r1.durationSeconds * 0.95,
+                summary: 'Seaport–Airport Rd Bypass',
+                isEstimated: true,
+              ))
+        .copyWith(isEstimated: true);
+    final r3 = (routes.length > 2
+            ? routes[2]
+            : RouteModel(
+                coordinates: r1.coordinates,
+                distanceMeters: r1.distanceMeters * 1.18,
+                durationSeconds: r1.durationSeconds * 1.14,
+                summary: 'Infopark Expressway Corridor',
+                isEstimated: true,
+              ))
+        .copyWith(isEstimated: true);
 
     return [
       RouteComparison(
@@ -536,6 +546,7 @@ class RiskEngine {
         isSafest: true,
         isRecommended: true,
         recommendationTag: 'Safest',
+        isEstimated: true,
       ),
       RouteComparison(
         route: r2,
@@ -549,6 +560,7 @@ class RiskEngine {
         rank: 2,
         isFastestAcceptable: true,
         recommendationTag: 'Fastest Acceptable',
+        isEstimated: true,
       ),
       RouteComparison(
         route: r3,
@@ -561,6 +573,7 @@ class RiskEngine {
         combinedScore: (riskWeight * 64.0) + (timeWeight * 28.0),
         rank: 3,
         recommendationTag: 'Caution',
+        isEstimated: true,
       ),
     ];
   }
@@ -657,6 +670,7 @@ class RiskEngine {
           maxRisk: maxRisk,
           weightedAvgRisk: weightedAvg,
           departureTime: shiftedDeparture,
+          isEstimated: route.isEstimated,
         );
       }).toList();
 
@@ -687,6 +701,7 @@ class RiskEngine {
           riskReductionVsBaseline: reduction,
           isSafestSlot: isSafest,
           departureTime: r.departureTime,
+          isEstimated: r.isEstimated,
         );
       }).toList();
     } catch (_) {
@@ -733,6 +748,7 @@ class RiskEngine {
         weightedAvgRisk: risk,
         departureTime: depTime,
         isSafestSlot: risk <= 20.0,
+        isEstimated: true,
       ));
     }
     return list;
